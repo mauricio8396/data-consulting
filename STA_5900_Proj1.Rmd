@@ -1,0 +1,139 @@
+---
+title: "STA 5900 Proj 1"
+date: "2023-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(yardstick)
+library(modelr)
+library(caret)
+setwd("~/Documents/STA 5900")
+elevator_data <- read.csv("Elevator Data.csv")
+```
+
+
+
+```{r}
+# split data
+trainIndex <- createDataPartition(elevator_data$Duration, p = .7,  # 70% training set
+                                  list = FALSE,
+                                  times = 1)
+
+elevator_data$train <- FALSE  # set to FALSE (default)
+elevator_data$train[trainIndex] <- TRUE  # if row is in trainIndex, set to TRUE
+
+# create data sets to use (when needed)
+elevator_train <- elevator_data %>% filter(train == TRUE) %>% dplyr::select(-train)
+elevator_test <- elevator_data %>% filter(train == FALSE) %>% dplyr::select(-train)
+
+```
+
+
+
+```{r}
+set.seed(693094)
+
+str(elevator_data)
+#graphing data
+
+ggplot(elevator_data, aes(x = HoursObserved, y = Duration, color=DayObserved)) +
+labs(title="Duration v HoursObserved") +
+theme(plot.title=element_text(hjust=0.5)) +
+geom_point(alpha = 0.6)
+
+ggplot(elevator_data, aes(x = TimeObserved, y = Duration, color=DayObserved)) +
+labs(title="Duration v HoursObserved") +
+theme(plot.title=element_text(hjust=0.5)) +
+geom_point(alpha = 0.6)
+
+
+ggplot(elevator_data, aes(x = TimeObserved, y = Duration)) +
+labs(title="Duration v HoursObserved") +
+theme(plot.title=element_text(hjust=0.5)) +
+geom_boxplot()
+
+ggplot(elevator_data, aes(Duration, color=DayObserved)) + geom_histogram(bins=30)
+
+
+```
+
+
+
+```{r}
+
+# fitting a model
+fit_gamma <- glm(Duration ~ DayObserved + HoursObserved, 
+                 data = elevator_train, 
+                 family = Gamma)
+
+summary(fit_gamma)
+```
+
+
+
+```{r}
+# adding predictions of the fitted model to the data frame
+elevator_data <- elevator_data %>% spread_predictions(fit_gamma)
+elevator_data[,8] <- 1/elevator_data$fit_gamma
+```
+
+
+
+```{r}
+#RMSE, MSE, MAE & R^2 of training data
+temp_tr <- elevator_data %>% filter(train == TRUE)
+original_tr <- temp_tr$Duration
+predicted_tr <- temp_tr$fit_gamma
+d <- original_tr - predicted_tr
+mse <- mean((d)^2)
+mae <- mean(abs(d))
+rmse <- sqrt(mse)
+R2 <- 1-(sum((d)^2)/sum((original_tr-mean(original_tr))^2))
+
+cat(" MAE:", mae, "\n", "MSE:", mse, "\n", 
+    "RMSE:", rmse, "\n", "R-squared:", R2)
+ 
+#double checking calculations
+temp_tr %>% mae(Duration, fit_gamma)
+temp_tr %>% rmse(Duration, fit_gamma)
+temp_tr %>% rsq(Duration, fit_gamma)
+temp_tr %>% rsq_trad(Duration, fit_gamma)
+
+```
+
+
+
+```{r}
+#RMSE, MSE, MAE & R^2 of test data
+temp_te <- elevator_data %>% filter(train == FALSE)
+original_te <- temp_te$Duration
+predicted_te <- temp_te$fit_gamma
+d <- original_te - predicted_te
+mse <- mean((d)^2)
+mae <- mean(abs(d))
+rmse <- sqrt(mse)
+R2 <- 1-(sum((d)^2)/sum((original_te-mean(original_te))^2))
+
+cat(" MAE:", mae, "\n", "MSE:", mse, "\n", 
+    "RMSE:", rmse, "\n", "R-squared:", R2)
+
+#double checking calculations
+temp_te %>% mae(Duration, fit_gamma)
+temp_te %>% rmse(Duration, fit_gamma)
+temp_te %>% rsq(Duration, fit_gamma)
+temp_te %>% rsq_trad(Duration, fit_gamma)
+
+```
+
+
+
+
