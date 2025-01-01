@@ -1,0 +1,964 @@
+---
+title: "Stroke Prediction Dataset"
+author: "Hugo Marquez, Casey Hernandez, Mauricio Gutierrez, Alejandro Hernandez"
+output: pdf_document
+date: 'Due 4-25-2023 at 5pm'
+output:
+    pdf_document:
+      df_print: kable
+---
+
+```{r global_options, include=FALSE}
+# these are some optional settings that will change how some features look
+# you do not need to change them.
+knitr::opts_chunk$set(out.width = "50%", out.height="50%", fig.align="center", warning=FALSE, message=FALSE)
+```
+
+```{r}
+
+# Loading Relevent Packages
+
+library(dplyr)
+library(caret)
+library(tidyr)
+library(ggplot2)
+library(yardstick)
+library(modelr)
+library(gridExtra)
+library(rpart.plot)
+library(GGally)
+
+```
+
+
+```{r}
+
+#Reading in the data sheets
+
+
+# Training set
+
+stroke_train <- read.csv("~/Documents/STA 5900/STA 5900 Project 2/train.csv")
+
+# Test set ( Not sure if we need it yes???)
+
+stroke_test <- read.csv("~/Documents/STA 5900/STA 5900 Project 2/test.csv")
+
+stroke_test$stroke <- 0
+stroke_combined <- rbind(stroke_train, stroke_test)
+```
+
+
+----------- Data Cleaning  -----------
+
+
+```{r}
+# checking for N/A's on both sets
+
+colSums(is.na(stroke_train))
+
+colSums(is.na(stroke_test))
+
+str(stroke_train)
+
+```
+
+
+
+```{r}
+
+# checking for empty entries for string columns in both sets
+
+colSums(stroke_train=="")
+
+colSums(stroke_test=="")
+
+```
+
+```{r}
+
+
+
+# Gender is now a numerical value 1 or 0;
+
+stroke_combined$gender <- ifelse(stroke_combined$gender == "Male", 1, 0)
+
+stroke_combined$stroke <- as.factor(stroke_combined$stroke)
+
+
+str(stroke_train)
+
+
+```
+
+
+
+
+----------- Feature Engineering -----------
+
+
+```{r}
+# Feature Engineering
+
+
+# Creating a new variable called "diabetic" with levels based on glucose averages;
+
+stroke_combined <- stroke_combined %>% 
+  mutate(diabetic= case_when(avg_glucose_level <= 115 ~ 'normal',
+       avg_glucose_level > 115  & avg_glucose_level <= 137  ~ 'pre_diabetic',
+                                    avg_glucose_level > 137  ~ 'diabetic'))
+
+stroke_combined$diabetic<-factor(stroke_combined$diabetic)
+
+levels(stroke_combined$diabetic)
+
+
+# Creating a new variable called "bmi_ranges" with levels based on bmi ;
+
+stroke_combined <- stroke_combined %>% mutate(bmi_ranges= case_when(bmi <= 18.5 ~ 'underweight',
+                                             bmi > 18.5  & bmi <= 25  ~ 'normal',
+                                             bmi > 25  & bmi <= 30 ~ 'overweight',
+                                             bmi > 30  & bmi <= 35 ~ 'obese',
+                                             bmi > 35~ 'extremelyObese'))
+
+stroke_combined$work_type[stroke_combined$work_type == "Self-employed"] <- "Self_employed"
+stroke_combined$smoking_status[stroke_combined$smoking_status == "never smoked"] <- "never_smoked"
+stroke_combined$smoking_status[stroke_combined$smoking_status == "formerly smoked"] <- "formerly_smoked"
+
+#----------- Visualizing Uknowns for smoking_status-----------
+
+work_type.labels<-c('0'="children", '1'="Govt_job", '2'='Never_worked','3'='Private',
+              '4'='Self-employed')
+gender.labels <- c('0'='female', '1'='male')
+
+
+stroke_combined%>%
+  mutate(stroke=stroke) %>%
+  ggplot(aes(x=smoking_status, fill=stroke)) +geom_bar(alpha=0.5) + facet_wrap(~bmi_ranges)+ labs(title="Stroke by Smoking Status and Work Type")+theme(plot.title = element_text(hjust = 0.5))
+
+stroke_combined%>%
+  mutate(stroke=stroke) %>%
+  ggplot(aes(x=smoking_status, fill=stroke)) +geom_bar(alpha=0.5) + facet_wrap(~work_type)+ labs(title="Stroke by Smoking Status and Work Type")+theme(plot.title = element_text(hjust = 0.5))
+
+stroke_combined%>%
+  mutate(stroke=stroke) %>%
+  ggplot(aes(x=bmi,y=age, col=stroke)) +geom_point(alpha=0.5) + facet_wrap(~smoking_status)+ labs(title="Stroke by Smoking Status and Work Type")+theme(plot.title = element_text(hjust = 0.5))
+
+stroke_combined%>%
+  mutate(stroke=stroke) %>%
+  ggplot(aes(x=gender,y=age, col=stroke)) +geom_point(alpha=0.5) + facet_wrap(~smoking_status)+ labs(title="Stroke by Smoking Status and Work Type")+theme(plot.title = element_text(hjust = 0.5))
+
+stroke_combined%>% mutate(agegroup = case_when(age <= 12 ~ '1',
+                                             age >= 13  & age <= 19 ~ '2',
+                                             age >= 20  & age <= 34 ~ '3',
+                                             age>=35 & age<= 54 ~ '4',
+                                             age>=55 ~'5'))%>%
+  mutate(stroke=stroke) %>%
+  ggplot(aes(x=agegroup, fill=stroke)) +
+  geom_bar()+
+  facet_wrap(~gender, labeller = labeller(gender = gender.labels)) + 
+  labs(title="Stroke by Age and gender")+theme(plot.title = element_text(hjust = 0.5), 
+                                                  axis.text.x =element_text(angle=45, 
+                                                                            vjust = 1, 
+                                                                            hjust=1)) + 
+  scale_x_discrete(labels=c("1" = "<13", "2" = "13-19", "3" = "20-34", "4" = "35-54", "5" = "55>"))
+
+stroke_combined%>% mutate(agegroup = case_when(age <= 12 ~ '1',
+                                             age >= 13  & age <= 19 ~ '2',
+                                             age >= 20  & age <= 34 ~ '3',
+                                             age>=35 & age<= 54 ~ '4',
+                                             age>=55 ~'5'))%>%
+  mutate(stroke=stroke) %>%
+  ggplot(aes(x=agegroup, fill=stroke)) +
+  geom_bar()+
+  facet_wrap(~smoking_status) + 
+  labs(title="Stroke by Age and gender")+theme(plot.title = element_text(hjust = 0.5), 
+                                                  axis.text.x =element_text(angle=45, 
+                                                                            vjust = 1, 
+                                                                            hjust=1)) + 
+  scale_x_discrete(labels=c("1" = "<13", "2" = "13-19", "3" = "20-34", "4" = "35-54", "5" = "55>"))
+
+stroke_combined%>%
+  ggplot(aes(x=age,y=hypertension, fill=stroke)) +
+  geom_point(alpha=0.5) + facet_wrap(~smoking_status)+ 
+  labs(title="Stroke by Smoking Status and Work Type")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+stroke_combined%>%
+  ggplot(aes(x=age,y=heart_disease, fill=stroke)) +
+  geom_point(alpha=0.5) + facet_wrap(~smoking_status)+ 
+  labs(title="Stroke by Smoking Status and Work Type")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+stroke_combined%>%
+  ggplot(aes(x=age, y=bmi_ranges, fill=stroke)) +
+  geom_boxplot(alpha=0.5) + facet_wrap(~smoking_status)+ 
+  labs(title="Stroke by Smoking Status and Work Type")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+#-----------Imputing Unkowns for smoking_status-----------
+
+for (i in 1:25508){
+if (stroke_combined$age[i] < 21 & stroke_combined$smoking_status[i] == "Unknown"){
+stroke_combined$smoking_status[i] <- "never_smoked"
+}
+if ((stroke_combined$age[i] >= 21 | stroke_combined$age[i] < 35 ) & 
+    stroke_combined$bmi_ranges[i] == "normal"){
+stroke_combined$smoking_status[i] <- "never_smoked"
+}
+if (stroke_combined$age[i] >= 35 & stroke_combined$bmi_ranges[i] == "normal"){
+stroke_combined$smoking_status[i] <- "smokes"
+}
+if (stroke_combined$age[i] >= 21 & stroke_combined$bmi_ranges[i] == "underweight"){
+stroke_combined$smoking_status[i] <- "smokes"
+}
+if (stroke_combined$hypertension[i] == "1" | stroke_combined$heart_disease[i] == "1"){
+stroke_combined$smoking_status[i] <- "never_smoked"
+}
+}
+
+index_fill <- which(stroke_combined$smoking_status == "Unknown")
+for (i in 1:floor(length(index_fill))){
+stroke_combined$smoking_status[index_fill[i]] <- "smokes"
+}
+
+for (i in 1:ceiling(length(index_fill))){
+stroke_combined$smoking_status[index_fill[i]] <- "never_smoked"
+}
+
+stroke_combined$bmi_ranges <- factor(stroke_combined$bmi_ranges)
+stroke_combined$work_type <- factor(stroke_combined$work_type)
+stroke_combined$smoking_status <- factor(stroke_combined$smoking_status)
+stroke_combined$ever_married <- factor(stroke_combined$ever_married)
+
+
+levels(stroke_combined$bmi_ranges)
+
+
+str(stroke_combined)
+
+
+
+
+```
+
+
+
+----------- Data Splitting -----------
+
+
+```{r}
+
+set.seed(5900)
+
+# train / validation set(test set split from the training set) 
+# removing unnecessary variables;
+
+#stroke_train <- stroke_train %>% dplyr::select(-id)
+# stroke_train <- stroke_train %>% dplyr::select(-ever_married)
+# stroke_train <- stroke_train %>% dplyr::select(-work_type)
+stroke_combined <- stroke_combined %>% dplyr::select(-Residence_type)
+stroke_combined$stroke <- as.factor(stroke_combined$stroke)
+
+myvars<- c("gender", "age", "hypertension", "heart_disease", "ever_married", "work_type", "avg_glucose_level", "bmi", "smoking_status", "diabetic", "bmi_ranges", "stroke")
+
+trainIndex <- createDataPartition(stroke_combined[1:15304, "stroke"], p = .70,
+                                  list = FALSE, 
+                                  times = 1)
+
+stroke_combined[1:15304, "train"] <- FALSE 
+stroke_combined[1:15304, "train"][trainIndex] <- TRUE
+new_stroke_train <- stroke_combined %>% filter(train == TRUE) %>% dplyr::select(myvars)
+new_stroke_test <- stroke_combined %>% filter(train == FALSE) %>% dplyr::select(myvars)
+
+
+str(new_stroke_train)
+
+myvars2<- c("id","gender", "age", "hypertension", "heart_disease", "ever_married", "work_type", "avg_glucose_level", "bmi", "smoking_status", "diabetic", "bmi_ranges", "stroke")
+
+stroke_test_2 <- stroke_combined[15305:nrow(stroke_combined), ] %>% dplyr::select(myvars2)
+
+```
+
+
+----------- Exploratory Analysis -----------
+
+
+```{r}
+
+
+suppressWarnings(ggpairs(stroke_train, aes(col=as.factor(stroke)), 
+        progress = FALSE,
+        lower=list(combo=wrap("facethist",binwidth=0.5)))
+)
+
+stroke_train %>%
+  ggplot(aes(x=work_type, fill = stroke)) + geom_bar() + 
+  labs(title="Work Type filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+new_stroke_train %>%
+  ggplot(aes(x=smoking_status, fill = stroke)) + geom_bar() + 
+  labs(title="Smoking Status filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+stroke_train %>%
+  ggplot(aes(x=smoking_status, fill = stroke)) + geom_bar() + 
+  labs(title="Smoking Status filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+stroke_train %>%
+  ggplot(aes(x=hypertension, fill = stroke)) + geom_boxplot() + 
+  labs(title="Hypertension filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+stroke_train %>%
+  ggplot(aes(x=heart_disease, fill = stroke)) + geom_bar() + 
+  labs(title="Heart Disease filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+stroke_train %>%
+  ggplot(aes(x=bmi, y=avg_glucose_level, col = as.factor(stroke))) + geom_point(alpha=0.5, size=0.5) + 
+  labs(title="Avg Glucose Level vs BMI filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+#lower bmi and glucose level are less likely to have stroke compared to those 
+#that have high values
+
+stroke_train %>%
+  ggplot(aes(x=bmi, y=age, col = as.factor(stroke))) + geom_point(alpha=0.5,size=0.5) + 
+  labs(title="Age vs BMI filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+#lower bmi and glucose level are less likely to have stroke compared to those 
+#that have high values
+
+
+stroke_train %>%
+  ggplot(aes(x=smoking_status, y=age, fill = stroke)) + geom_boxplot() + 
+  labs(title="Age vs Smoking Status filled by Stroke") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+----------- Additional Exploratory Analysis -----------
+
+
+```{r}
+
+p <- ggplot(new_stroke_train, aes(y=avg_glucose_level, color=factor(stroke)))
+pw <- ggplot(new_stroke_train, aes(y=bmi, color=factor(stroke)))
+
+p9 <- p + geom_point(aes(x=bmi))
+p10 <- p + geom_point(aes(x=age))
+p11 <- p + geom_boxplot(aes(x=bmi_ranges))
+p12 <- pw + geom_boxplot(aes(x=heart_disease))
+
+
+p1 <- pw + geom_boxplot(aes(x=gender))
+p2 <- pw + geom_boxplot(aes(x=hypertension))
+p3 <- pw + geom_boxplot(aes(x=heart_disease))
+p4 <- pw + geom_boxplot(aes(x=ever_married))
+p5 <- pw + geom_boxplot(aes(x=work_type))
+p6 <- pw + geom_point(aes(x=age))
+p7 <- pw + geom_boxplot(aes(x=bmi_ranges))
+p8 <- pw + geom_boxplot(aes(x=smoking_status))
+
+
+grid.arrange(p1,p2,p3,p4,ncol=2)
+grid.arrange(p5,p6,p7,p8,ncol=2)
+grid.arrange(p9,p10,p11,p12,ncol=2)
+p7
+p5
+p8
+p11
+
+```
+
+
+----------- Models -----------
+
+
+```{r}
+
+set.seed(5900)
+
+m_rf <- train(stroke ~ ., 
+                    data=new_stroke_train, 
+                    method="rf", 
+                    trControl = trainControl(method = "cv"),
+                    tuneGrid = expand.grid(mtry=3) #11 predictors, floor(sqrt(11))
+                    )                #default for mtry is sqrt(#predictors)
+
+varImp(m_rf$finalModel)
+
+
+
+fit_mod1 <- train(stroke ~ age + bmi + avg_glucose_level, 
+                    data=new_stroke_train, 
+                    method="glm", 
+                    family="binomial",
+                    trControl = trainControl(method = "none")
+                    )
+
+fit_mod2 <- train(stroke ~ ., 
+                    data=new_stroke_train, 
+                    method="glm", 
+                    family="binomial"
+                    )
+
+mod_tree_1 <- train(stroke ~ ., 
+                    data=new_stroke_train, 
+                    method="rpart", 
+                    trControl = trainControl(method = "cv"),
+                    tuneGrid = expand.grid(cp = 0.005)
+                    )
+
+fit_svm_Linear <- train(stroke ~ age + bmi + avg_glucose_level,
+                  data = new_stroke_train,
+                  method = "svmLinear"
+                  )
+fit_svm_Linear_av <- train(stroke ~ .,
+                  data = new_stroke_train,
+                  method = "svmLinear"
+                  )
+
+fit_svm_Radial <- train(stroke ~ age + bmi + avg_glucose_level,
+                  data = new_stroke_train,
+                  method = "svmRadial"
+                  )
+fit_svm_Radial_av <- train(stroke ~ .,
+                  data = new_stroke_train,
+                  method = "svmRadial"
+                  )
+
+fit_svm_Poly <- train(stroke ~ age + bmi + avg_glucose_level,
+                  data = new_stroke_train,
+                  method = "svmPoly"
+                  )
+#fit_svm_Poly_all <- train(stroke ~ .,
+ #                 data = new_stroke_train,
+  #                method = "svmPoly"
+   #               )
+
+rpart.plot(mod_tree_1$finalModel, extra = 1)
+
+
+
+
+```
+
+
+
+
+
+```{r}
+
+glm1 <- train(stroke ~ bmi + age + avg_glucose_level + hypertension ,
+            data = new_stroke_train, 
+            method = "glm",
+            family = "binomial")
+
+summary(glm1)
+
+set.seed(5900)
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 10)
+gbmFit1 <- train(stroke ~ ., data = new_stroke_train, 
+                 method = "gbm", 
+                 trControl = fitControl,
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+gbmFit1
+
+```
+
+
+```{r}
+
+set.seed(5900)
+
+fit_tree_big <- train(stroke ~ bmi + age + avg_glucose_level + hypertension,
+                      data = new_stroke_train,
+                      method="rpart",
+                      trControl = trainControl(method = "cv", number = 15),
+                      tuneGrid = expand.grid(cp=.0065))
+
+rpart.plot(fit_tree_big$finalModel)
+
+```
+
+
+
+```{r}
+
+lambda_grid <- 10^seq(-2.5, -1.6, length=100)
+
+set.seed(5900)
+
+fit_lasso <- train(stroke ~ . , 
+                  data = new_stroke_train,
+                  method="glmnet",
+                  family = "binomial",
+                  tuneGrid = expand.grid(alpha = 1, lambda = lambda_grid),
+                  trControl = trainControl(method = "cv", number = 10))
+
+plot(fit_lasso, xTrans = log10)
+
+coef(fit_lasso$finalModel, fit_lasso$bestTune$lambda)
+fit_lasso$bestTune$lambda
+
+```
+
+
+```{r}
+
+Ridge_grid <- 10^seq(-2.5, -2.3, length=100)
+
+set.seed(5900)
+
+
+fit_Ridge <- train(stroke ~ . , 
+                  data = new_stroke_train,
+                  method="glmnet",
+                  family = "binomial",
+                  tuneGrid = expand.grid(alpha = 0, lambda = Ridge_grid),
+                  trControl = trainControl(method = "cv", number = 10))
+
+plot(fit_Ridge, xTrans = log10)
+
+coef(fit_Ridge$finalModel, fit_Ridge$bestTune$lambda)
+
+```
+
+```{r}
+set.seed(5900)
+fit_fs <- train(stroke ~ bmi + age + avg_glucose_level + hypertension, 
+                data = new_stroke_train,
+                method = "glmStepAIC", 
+                family = "binomial",
+                direction = "forward", 
+                trace = TRUE, 
+                trControl = trainControl(method = "none"))
+
+summary(fit_fs)
+fit_fs$finalModel
+
+```
+
+
+
+```{r}
+
+set.seed(5900)
+
+m_rf <- train(stroke ~ ., 
+              data = new_stroke_train,
+              method="rf",
+              trControl = trainControl(method = "repeatedcv",
+                                       number=5,
+                                       repeats=5))
+
+
+m_rf
+
+varImp(m_rf$finalModel)
+
+m_rf_2 <- train(stroke ~ ., 
+                    data=new_stroke_train, 
+                    method="rf", 
+                    trControl = trainControl(method = "cv"),
+                    tuneGrid = expand.grid(mtry=3) #11 predictors, floor(sqrt(11))
+                    )                #default for mtry is sqrt(#predictors)
+
+varImp(m_rf_2$finalModel)
+
+```
+
+```{r}
+set.seed(5900)
+control_2 <- trainControl(method = "cv", number = 5)
+
+mlp_nn <- train(stroke ~ bmi + age + avg_glucose_level + hypertension,
+              method = "mlp",
+              preProc = c("center", "scale", "nzv"),
+              metric = "Kappa", # maximize over Kappa instead of accuracy
+              trControl = control_2,
+              learnFunc = "Rprop", # robust propogation
+              maxit = 300, # for how long it will run for fitting
+              tuneGrid = expand.grid(size = seq(2,30,by=2)),
+              data = new_stroke_train)
+
+plot(mlp_nn)
+
+mlp_nn
+
+# to get the number of hidden units by pulling them out;
+
+print(mlp_nn$bestTune)
+
+
+```
+
+
+----------- Metrics on Training set-----------
+
+```{r}
+
+# setting up the data frame to pull the metrics;
+
+yhat_metrics<-metric_set(accuracy, sens, spec)
+
+
+new_stroke_train_df <- new_stroke_train
+
+new_stroke_train_df <- new_stroke_train_df %>%
+         mutate(glm1_yhat = predict(glm1, newdata = ., type="raw")) %>%
+         mutate(glm1_prob = predict(glm1, newdata = ., type="prob")$'1')
+
+new_stroke_train_df <- new_stroke_train_df %>%
+         mutate(fit_tree_big_yhat = predict(fit_tree_big, newdata = ., type="raw")) %>%
+         mutate(fit_tree_big_prob = predict(fit_tree_big, newdata = ., type="prob")$'1')
+
+new_stroke_train_df <- new_stroke_train_df %>%
+         mutate(fit_lasso_yhat = predict(fit_lasso, newdata = ., type="raw")) %>%
+         mutate(fit_lasso_prob = predict(fit_lasso, newdata = ., type="prob")$'1')
+
+new_stroke_train_df <- new_stroke_train_df %>%
+         mutate(fit_Ridge_yhat = predict(fit_Ridge, newdata = ., type="raw")) %>%
+         mutate(fit_Ridge_prob = predict(fit_Ridge, newdata = ., type="prob")$'1')
+
+new_stroke_train_df <- new_stroke_train_df %>%
+         mutate(fit_fs_yhat = predict(fit_fs, newdata = ., type="raw")) %>%
+         mutate(fit_fs_prob = predict(fit_fs, newdata = ., type="prob")$'1')
+
+new_stroke_train_df <- new_stroke_train_df %>%
+         mutate(m_rf_yhat = predict(m_rf, newdata = ., type="raw")) %>%
+         mutate(m_rf_prob = predict(m_rf, newdata = ., type="prob")$'1')
+
+new_stroke_train_df <- new_stroke_train_df %>% 
+        mutate(m_rf_2_yhat = predict(m_rf_2, newdata = ., type="raw")) %>%
+        mutate(m_rf_2_prob = predict(m_rf_2, newdata = ., type="prob")$`1`)
+
+new_stroke_train_df <- new_stroke_train_df %>% 
+        mutate(gbmFit1_yhat = predict(gbmFit1, newdata = ., type="raw")) %>%
+        mutate(gbmFit1_prob = predict(gbmFit1, newdata = ., type="prob")$`1`)
+
+new_stroke_train_df <- new_stroke_train_df %>% 
+        mutate(nn_b_yhat = predict(mlp_nn, newdata = ., type="raw")) %>%
+        mutate(nn_b_prob = predict(mlp_nn, newdata = ., type="prob")$`1`)
+
+new_stroke_train_df %>% 
+  pivot_longer(c(glm1_yhat,
+                 fit_tree_big_yhat,
+                 fit_lasso_yhat,
+                 fit_Ridge_yhat,
+                 fit_fs_yhat,
+                 m_rf_yhat,
+                 m_rf_2_yhat,
+                 gbmFit1_yhat,
+                 nn_b_yhat)) %>%
+  group_by(name) %>%
+  yhat_metrics(truth = stroke, estimate = value)
+
+
+
+# Confusion matrix for the model;
+
+new_stroke_train_df %>%
+  conf_mat(stroke , glm1_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , fit_tree_big_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , fit_lasso_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , fit_Ridge_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , fit_fs_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , m_rf_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , m_rf_2_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , gbmFit1_yhat)
+
+new_stroke_train_df %>%
+  conf_mat(stroke , nn_b_yhat)
+# To produce the ROC curves;
+
+new_stroke_train_df %>% 
+  pivot_longer(cols=c("glm1_prob","fit_tree_big_prob", "fit_lasso_prob", "fit_fs_prob", "m_rf_prob", "m_rf_2_prob", "fit_Ridge_prob","nn_b_prob"),
+               names_to = "model",
+               values_to = "prob") %>%
+  group_by(model) %>%
+  roc_curve(truth = stroke, 
+            estimate = prob,
+            event_level = "second") %>% 
+  ggplot(
+    aes(
+      x = 1 - specificity, 
+      y = sensitivity, 
+      color = model
+    )
+  ) +
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, size = 0.4) +
+  ggtitle("Training Set ROC Curves")
+
+
+new_stroke_train_df %>%
+  pivot_longer(c(glm1_prob,
+                 fit_tree_big_prob,
+                 fit_lasso_prob,
+                 fit_Ridge_prob,
+                 fit_fs_prob,
+                 m_rf_prob,
+                 m_rf_2_prob,
+                 nn_b_prob)) %>%
+  group_by(name) %>% 
+  roc_auc(stroke,value, event_level = "second")
+
+
+```
+
+----------- Metrics on Test set-----------
+
+```{r}
+
+# setting up the data frame to pull the metrics;
+
+yhat_metrics<-metric_set(accuracy, sens, spec)
+
+
+new_stroke_test_df <- new_stroke_test
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(glm1_yhat = predict(glm1, newdata = ., type="raw")) %>%
+         mutate(glm1_prob = predict(glm1, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(fit_tree_big_yhat = predict(fit_tree_big, newdata = ., type="raw")) %>%
+         mutate(fit_tree_big_prob = predict(fit_tree_big, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(fit_lasso_yhat = predict(fit_lasso, newdata = ., type="raw")) %>%
+         mutate(fit_lasso_prob = predict(fit_lasso, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(fit_Ridge_yhat = predict(fit_Ridge, newdata = ., type="raw")) %>%
+         mutate(fit_Ridge_prob = predict(fit_Ridge, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(fit_fs_yhat = predict(fit_fs, newdata = ., type="raw")) %>%
+         mutate(fit_fs_prob = predict(fit_fs, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(m_rf_yhat = predict(m_rf, newdata = ., type="raw")) %>%
+         mutate(m_rf_prob = predict(m_rf, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>%
+         mutate(m_rf_2_yhat = predict(m_rf_2, newdata = ., type="raw")) %>%
+         mutate(m_rf_2_prob = predict(m_rf_2, newdata = ., type="prob")$'1')
+
+new_stroke_test_df <- new_stroke_test_df %>% 
+        mutate(gbmFit1_yhat = predict(gbmFit1, newdata = ., type="raw")) %>%
+        mutate(gbmFit1_prob = predict(gbmFit1, newdata = ., type="prob")$`1`)
+
+new_stroke_test_df <- new_stroke_test_df %>% 
+        mutate(nn_b_yhat = predict(mlp_nn, newdata = ., type="raw")) %>%
+        mutate(nn_b_prob = predict(mlp_nn, newdata = ., type="prob")$`1`)
+
+new_stroke_test_df %>% 
+  pivot_longer(c(glm1_yhat,
+                 fit_tree_big_yhat,
+                 fit_lasso_yhat,
+                 fit_Ridge_yhat,
+                 fit_fs_yhat,
+                 m_rf_yhat,
+                 m_rf_2_yhat,
+                 gbmFit1_yhat,
+                 nn_b_yhat)) %>%
+  group_by(name) %>%
+  yhat_metrics(truth = stroke, estimate = value)
+
+
+
+# Confusion matrix for the model;
+
+new_stroke_test_df %>%
+  conf_mat(stroke , glm1_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , fit_tree_big_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , fit_lasso_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , fit_Ridge_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , fit_fs_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , m_rf_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , m_rf_2_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , gbmFit1_yhat)
+
+new_stroke_test_df %>%
+  conf_mat(stroke , nn_b_yhat)
+
+# To produce the ROC curves;
+
+new_stroke_test_df %>% 
+  pivot_longer(cols=c("glm1_prob","fit_tree_big_prob", "fit_lasso_prob", "fit_fs_prob", "m_rf_prob","m_rf_2_prob", "fit_Ridge_prob","nn_b_prob"),
+               names_to = "model",
+               values_to = "prob") %>%
+  group_by(model) %>%
+  roc_curve(truth = stroke, 
+            estimate = prob,
+            event_level = "second") %>% 
+  ggplot(
+    aes(
+      x = 1 - specificity, 
+      y = sensitivity, 
+      color = model
+    )
+  ) +
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, size = 0.4) +
+  ggtitle("Test Set ROC Curves")
+
+
+new_stroke_test_df %>%
+  pivot_longer(c(glm1_prob,
+                 fit_tree_big_prob,
+                 fit_lasso_prob,
+                 fit_Ridge_prob,
+                 fit_fs_prob,
+                 m_rf_prob,
+                 m_rf_2_prob,
+                 nn_b_prob)) %>%
+  group_by(name) %>% 
+  roc_auc(stroke,value, event_level = "second")
+
+
+```
+
+
+
+----------- Kaggle Submition -----------
+
+
+```{r}
+
+
+final_glm1_df <- stroke_test_2 %>%
+         mutate(glm1_prob = predict(glm1, newdata = ., type="prob")$'1')
+
+final_lasso_df <- stroke_test_2 %>%
+          mutate(fit_lasso_yhat = predict(fit_lasso, newdata = ., type="raw")) %>%
+         mutate(fit_lasso_prob = predict(fit_lasso, newdata = ., type="prob")$'1')
+
+fit_lasso_output <- data.frame(id = stroke_test_2$id, stroke = final_lasso_df$fit_lasso_prob)
+fit_glm_output <- data.frame(id = stroke_test_2$id, stroke = final_glm1_df$glm1_prob)
+
+final_lasso_df %>%
+  roc_auc(truth = stroke,estimate = fit_lasso_prob, event_level = "second")
+
+write.csv(fit_lasso_output, file = "lasso_final_model.csv", row.names = FALSE)
+write.csv(fit_glm_output, file = "glm1_final_model.csv", row.names = FALSE)
+
+
+fit_lasso <- train(stroke ~ bmi + age + avg_glucose_level + hypertension , 
+                  data = new_stroke_train,
+                  method="glmnet",
+                  family = "binomial",
+                  tuneGrid = expand.grid(alpha = 1, lambda = lambda_grid),
+                  trControl = trainControl(method = "cv", number = 10))
+
+final_df <- new_stroke_test_df %>%
+         mutate(fit_lasso_yhat = predict(fit_lasso, newdata = ., type="raw")) %>%
+         mutate(fit_lasso_prob = predict(fit_lasso, newdata = ., type="prob")$'1')
+
+fit_lasso_final_prob <- predict(fit_lasso, newdata = new_stroke_test, type = "prob")$"1"
+
+
+fit_lasso_output <- data.frame(id = stroke_test$id, stroke = fit_lasso_final_prob)
+
+write.csv(fit_lasso_final_prob, file = "lasso_final_model.csv", row.names = FALSE)
+
+```
+
+
+
+```{r}
+#estimating uncertainty
+Mode <- function(df) {
+  ux <- unique(df)
+  ux[which.max(tabulate(match(df, ux)))]
+}
+dataframe_all <- new_stroke_train
+df <- c(dataframe_all$stroke)
+result <- mode(df)
+print(result)
+
+library(boot)
+library(glmnet)
+lambda_grid <- 10^(-10)
+  new_stroke_train[10715,] <- c(1, 40, 0, 0, "No", "Self_employed", 80, 21, "never_smoked",
+                              "normal", "normal",0)
+
+boot_fn <- function(data, indices){
+  x <- model.matrix(stroke ~., data[indices,])[,-1]
+  y<- data %>% dplyr::select(stroke)%>% unlist()%>% as.numeric()  
+  fit <- glmnet(x, y, family=c("binomial"),
+                              lambda = lambda_grid,
+                              alpha=1)
+  xx <- x[1,]
+  prob <- predict(fit, newx=xx,type = "response")
+  return(prob)
+}
+
+results <- boot(data = new_stroke_train,
+                statistic = boot_fn, 
+                R=500)
+print(results)
+head(results$t0)
+
+plot(results)
+
+boot.ci(results, type="perc")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
